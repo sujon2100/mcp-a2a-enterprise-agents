@@ -1,0 +1,29 @@
+# ─────────────────────────────────────────────
+# SECRETS — never commit these
+# ─────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.secret
+
+# Anypoint Platform credentials
+anypoint-credentials.json
+anypoint.yaml.local
+
+# Any exchange.json with real org IDs or API keys baked in
+# (use exchange.json.template instead and inject at CI time)
+exchange.json.resolved
+
+# ─────────────────────────────────────────────
+# Build artifacts
+# ─────────────────────────────────────────────
+target/
+*.jar
+*.zip
+
+# ─────────────────────────────────────────────
+# OS / IDE
+# ─────────────────────────────────────────────
+.DS_Store
+.vscode/settings.json
+*.swp

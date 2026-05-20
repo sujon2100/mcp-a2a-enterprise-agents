@@ -1,0 +1,20 @@
+{
+  "description": "Varied valid complaint inputs for RQ1 latency benchmark. Rotated across runs to avoid LLM caching effects.",
+  "requests": [
+    {"id": 1,  "customerId": "CUST001", "orderId": "ORD001", "text": "I am customer CUST001. I received the wrong item for order ORD001. I want a refund."},
+    {"id": 2,  "customerId": "CUST002", "orderId": "ORD002", "text": "I am customer CUST002. I would like a refund for order ORD002. The product was damaged."},
+    {"id": 3,  "customerId": "CUST003", "orderId": "ORD003", "text": "I am customer CUST003. I would like a refund for ORD003. Item not as described."},
+    {"id": 4,  "customerId": "CUST001", "orderId": "ORD004", "text": "Customer CUST001 here. Order ORD004 never arrived. Please process a refund."},
+    {"id": 5,  "customerId": "CUST002", "orderId": "ORD005", "text": "This is CUST002. I need to return order ORD005. It is defective."},
+    {"id": 6,  "customerId": "CUST003", "orderId": "ORD001", "text": "My name is customer CUST003. Order ORD001 arrived broken. I request a full refund."},
+    {"id": 7,  "customerId": "CUST001", "orderId": "ORD002", "text": "Hello, I am CUST001. I received order ORD002 but the wrong colour was sent. Refund please."},
+    {"id": 8,  "customerId": "CUST002", "orderId": "ORD003", "text": "CUST002 here. My order ORD003 has a missing component. I would like a refund."},
+    {"id": 9,  "customerId": "CUST003", "orderId": "ORD004", "text": "I am customer CUST003 and I am requesting a refund for order ORD004 which was not delivered."},
+    {"id": 10, "customerId": "CUST001", "orderId": "ORD005", "text": "Customer ID CUST001. Order ORD005 quality is unacceptable. Please refund."},
+    {"id": 11, "customerId": "CUST002", "orderId": "ORD001", "text": "Hi, CUST002 requesting refund. Order ORD001 was delivered to the wrong address."},
+    {"id": 12, "customerId": "CUST003", "orderId": "ORD002", "text": "I am CUST003. The item in order ORD002 is not what I ordered. I want my money back."},
+    {"id": 13, "customerId": "CUST001", "orderId": "ORD003", "text": "CUST001 - order ORD003 was cancelled but I was still charged. I need a refund."},
+    {"id": 14, "customerId": "CUST002", "orderId": "ORD004", "text": "Customer CUST002. Order ORD004 arrived three weeks late and I no longer need it. Refund."},
+    {"id": 15, "customerId": "CUST003", "orderId": "ORD005", "text": "I am CUST003. Order ORD005 contained the wrong product entirely. Please process return and refund."}
+  ]
+}

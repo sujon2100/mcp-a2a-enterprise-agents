@@ -1,0 +1,101 @@
+# =============================================================
+# A2A PII Detector Policy — Reference Configuration
+# =============================================================
+#
+# Policy asset: a-two-a-pii-detector
+# Source org  : MuleSoft Organization (68ef9520-24e9-4cf2-b2f5-620025690913)
+# Version     : 1.0.1
+#
+# This file documents the policy configuration used in the
+# customer-complaint-resolution agent network.
+# The policy is applied declaratively inside agent-network.yaml
+# under brokers.complaint-resolution-broker.spec.policies.
+# It is NOT applied here — this file is documentation only.
+#
+# What it does
+# ────────────
+# Inspects every inbound A2A message payload for US Social Security
+# Numbers (regex-matched). If a match is found, the gateway rejects
+# the request with HTTP 401 Unauthorized before it reaches the LLM.
+# This prevents SSNs from being ingested, memorised, or logged by
+# the orchestrator.
+#
+# Verified behaviour (from Exercise 4 + tracing screenshots)
+# ──────────────────────────────────────────────────────────
+#   Input  : message containing "000-11-1111" (test SSN)
+#   Result : HTTP 401 Unauthorized, 1.01s response time
+#   Trace  : Single span — [Agent] complaint-resolution-broker
+#            Request blocked at ingress; no LLM call made.
+#
+# How it is wired into agent-network.yaml
+# ────────────────────────────────────────
+#   policies:
+#     - ref:
+#         name: a-two-a-pii-detector
+#         namespace: 68ef9520-24e9-4cf2-b2f5-620025690913
+#       configuration:
+#         entities:
+#           - US SSN
+#         action: Reject
+#
+# How to add it to exchange.json dependencies
+# ────────────────────────────────────────────
+#   "dependencies": [
+#     {
+#       "classifier": "schema",
+#       "packaging": "zip",
+#       "groupId": "68ef9520-24e9-4cf2-b2f5-620025690913",
+#       "assetId": "a-two-a-pii-detector",
+#       "version": "1.0.1"
+#     }
+#   ]
+#
+# =============================================================
+
+policy:
+  assetId: a-two-a-pii-detector
+  groupId: 68ef9520-24e9-4cf2-b2f5-620025690913
+  version: 1.0.1
+  description: >
+    MuleSoft built-in policy that scans A2A message payloads for
+    personally identifiable information patterns. Configured here
+    for US SSN detection with Reject action.
+
+  # Configuration injected into the policy at apply time
+  configuration:
+    entities:
+      - US SSN          # tested pattern: 000-11-1111
+
+    action: Reject      # Reject | Mask | Allow
+                        # Reject = HTTP 401; message never reaches LLM
+
+  # Scope: applied to inbound A2A messages on the broker
+  appliesTo:
+    - broker: complaint-resolution-broker
+      direction: inbound
+
+  # Observed runtime behaviour
+  observedBehaviour:
+    successCase:
+      input: "I am customer CUST002. I would like a refund for ORD003"
+      result: "200 OK — full 5-step orchestration completes in ~20.81s"
+
+    rejectionCase:
+      input: "My SSN is 000-11-1111 and I want a refund"
+      result: "401 Unauthorized — blocked at ingress in 1.01s"
+      traceSpans: 1
+      note: >
+        Trace shows only [Agent] complaint-resolution-broker span.
+        No LLM call is made — the PII is stopped at the gateway layer
+        before the message is ever seen by Gemini.
+
+  # Other PII entity types available in the policy
+  # (not used in this configuration but available for extension)
+  availableEntities:
+    - US SSN
+    - Credit Card Number
+    - Email Address
+    - Phone Number
+    - IP Address
+    - Date of Birth
+    - Passport Number

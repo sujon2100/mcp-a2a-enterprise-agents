@@ -1,0 +1,312 @@
+# =============================================================
+# RESEARCH CONFIG — Sequential Execution Baseline
+# =============================================================
+# RQ1 experimental variant: forces strictly sequential step
+# ordering so the LLM cannot parallelise any steps.
+#
+# ONLY the instructions: block is changed from the live config.
+# Everything else (tools, policies, connections) is identical.
+#
+# Deploy this by replacing agent-network.yaml in the live
+# project and republishing to Anypoint Exchange.
+# =============================================================
+
+schemaVersion: 1.0.0
+label: Customer Complaint Resolution Network
+
+brokers:
+  complaint-resolution-broker:
+    card:
+      protocolVersion: 0.3.0
+      name: Complaint Resolution Broker
+      description: Orchestrates end-to-end customer complaint resolution.
+      url: ${ingressgw.url}/complaint-resolution-broker
+      capabilities:
+        pushNotifications: false
+      version: 1.1.1
+      provider:
+        organization: MuleSoft
+        url: https://www.mulesoft.com
+      securitySchemes: {}
+      defaultInputModes:
+        - application/json
+        - text/plain
+      defaultOutputModes:
+        - application/json
+        - text/plain
+      skills:
+        -
+          id: resolution
+          name: Resolve Complaint
+          description: Handles returns and refunds.
+          tags:
+            - complaint-resolution
+    spec:
+      llm:
+        ref:
+          name: google-gemini
+        configuration:
+          model: ${googleGemini.modelName}
+          gemini:
+            temperature: 1.0
+            topP: 0.85
+            responseLogprobs: false
+            maxOutputTokens: 2048
+
+      # RESEARCH VARIANT: STRICTLY SEQUENTIAL
+      # Each step must fully complete before the next begins.
+      # No parallel execution is permitted at any stage.
+      # This is the experimental BASELINE for RQ1.
+      instructions:
+        - |
+          You are the Complaint Resolution Orchestrator.
+          Follow this STRICTLY SEQUENTIAL workflow.
+          You must complete each step in full and receive its response
+          before starting the next step. Do NOT start any step early.
+
+          STEP 1: Call `verification-agent` to verify the customer and order.
+                  Wait for the full verification response before proceeding.
+          STEP 2: Only after STEP 1 is complete, use `inventory-mcp-server`
+                  to `create_return_request`. Wait for the return ID.
+          STEP 3: Only after STEP 2 is complete and you have the return ID,
+                  use `inventory-mcp-server` to `generate_return_label`.
+                  Wait for the label URL.
+          STEP 4: Only after STEP 3 is complete and you have the label URL,
+                  use `finance-mcp-server` to `process_refund`.
+                  Wait for the transaction ID.
+          STEP 5: Only after STEP 4 is complete and you have the transaction ID,
+                  use `finance-mcp-server` to `create_ledger_entry`.
+
+          Final Response: Provide a summary with the Refund Status and Shipping Label URL.
+      # ────────────────────────────────────────────────────────
+
+      links:
+        - agent:
+            ref:
+              name: verification-agent
+      tools:
+        - mcp:
+            ref:
+              name: inventory-mcp-server
+        - mcp:
+            ref:
+              name: finance-mcp-server
+      policies:
+        - ref:
+            name: a-two-a-pii-detector
+            namespace: 68ef9520-24e9-4cf2-b2f5-620025690913
+          configuration:
+            entities:
+              - US SSN
+            action: Reject
+
+agents:
+  verification-agent:
+    label: Customer Verification Agent
+    description: |
+      Verifies customer identity, checks purchase history, and determines loyalty tiers (Gold/Platinum) for refund eligibility.
+    tags:
+      - crm
+    metadata:
+      protocol: a2a
+      platform: CustomNodeJS
+
+mcpServers:
+  inventory-mcp-server:
+    label: Inventory MCP Server
+    description: Managing returns, inventory checks, and shipping labels.
+    tags:
+      - logistics
+    metadata:
+      transport:
+        kind: streamableHttp
+        path: /
+      tools:
+        - name: generate_return_label
+          description: Generate a return shipping label using the customer address from the verification agent response and the return ID from create_return_request. Address fields are flattened to avoid nested objects (temporary workaround until MuleSoft fixes ToolUtils.java).
+          inputSchema:
+            type: object
+            additionalProperties: false
+            properties:
+              returnId:
+                type: string
+                description: The return request ID
+              customerAddressName:
+                type: string
+                description: Customer name for shipping label
+              customerAddressStreet:
+                type: string
+                description: Street address
+              customerAddressCity:
+                type: string
+                description: City
+              customerAddressState:
+                type: string
+                description: State
+              customerAddressZip:
+                type: string
+                description: ZIP code
+              contextId:
+                type: string
+                description: Workflow context ID for progress tracking and correlation (required by OpenAI Strict Mode)
+            required:
+              - returnId
+              - customerAddressName
+              - customerAddressStreet
+              - customerAddressCity
+              - customerAddressState
+              - customerAddressZip
+              - contextId
+        - name: create_return_request
+          description: Creates a return request in the WMS. Schema flattened to avoid nested objects (temporary workaround).
+          inputSchema:
+            type: object
+            additionalProperties: false
+            properties:
+              orderId:
+                type: string
+                description: The original order ID
+              customerId:
+                type: string
+                description: The customer ID
+              productId:
+                type: string
+                description: The product ID being returned
+              reason:
+                type: string
+                description: Reason for the return
+              quantity:
+                type: integer
+                description: Quantity of items to return
+                default: 1
+              contextId:
+                type: string
+                description: Workflow context ID for progress tracking and correlation (required by OpenAI Strict Mode)
+            required:
+              - orderId
+              - customerId
+              - productId
+              - reason
+              - quantity
+              - contextId
+        - name: check_inventory_status
+          description: Checks product stock levels.
+          inputSchema:
+            type: object
+            additionalProperties: false
+            properties:
+              productId:
+                type: string
+                description: The product ID to check
+              contextId:
+                type: string
+                description: Workflow context ID for progress tracking and correlation (required by OpenAI Strict Mode)
+            required:
+              - productId
+              - contextId
+
+  finance-mcp-server:
+    label: Finance MCP Server
+    description: Managing refunds, transactions, and ledger auditing.
+    tags:
+      - finance
+    metadata:
+      transport:
+        kind: streamableHttp
+        path: /
+      tools:
+        - name: "process_refund"
+          description: "Processes a refund. Requires expedited flag. OpenAI Strict Mode: all properties must be required."
+          inputSchema:
+            type: object
+            additionalProperties: false
+            properties:
+              customerId:
+                type: string
+              orderId:
+                type: string
+              productId:
+                type: string
+              amount:
+                type: number
+              reason:
+                type: string
+              expedited:
+                type: boolean
+              returnId:
+                type: string
+              contextId:
+                type: string
+            required:
+              - customerId
+              - orderId
+              - productId
+              - amount
+              - reason
+              - expedited
+              - returnId
+              - contextId
+        - name: "create_ledger_entry"
+          description: "Creates a financial audit log entry. OpenAI Strict Mode: all properties must be required."
+          inputSchema:
+            type: object
+            additionalProperties: false
+            properties:
+              transactionId:
+                type: string
+              customerId:
+                type: string
+              amount:
+                type: number
+              type:
+                type: string
+              description:
+                type: string
+              reference:
+                type: string
+              contextId:
+                type: string
+            required:
+              - transactionId
+              - customerId
+              - amount
+              - type
+              - description
+              - reference
+              - contextId
+
+llmProviders:
+  google-gemini:
+    label: Google Gemini
+    description: Google Gemini LLM Provider
+    metadata:
+      platform: Gemini
+
+connections:
+  verification-agent-connection:
+    kind: agent
+    ref:
+      name: verification-agent
+    spec:
+      url: ${heroku-backend.url}/a2a/
+  inventory-mcp-server-connection:
+    kind: mcp
+    ref:
+      name: inventory-mcp-server
+    spec:
+      url: ${heroku-backend.url}/inventory
+  finance-mcp-server-connection:
+    kind: mcp
+    ref:
+      name: finance-mcp-server
+    spec:
+      url: ${heroku-backend.url}/finance
+  google-gemini-connection:
+    kind: llm
+    ref:
+      name: google-gemini
+    spec:
+      url: ${googleGemini.url}
+      configuration:
+        apiKey: ${googleGemini.apiKey}
+        timeout: 600000

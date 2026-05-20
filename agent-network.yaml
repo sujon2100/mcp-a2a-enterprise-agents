@@ -1,0 +1,506 @@
+# Customer Complaint Resolution — MuleSoft Agent Fabric
+#
+# Author : Md Helal Uddin
+# Version: 1.1.4
+# Date   : April 16, 2026
+# Event  : Salesforce TDX 2026, Session 1557
+#
+# ---------------------------------------------------------------
+# THE PROBLEM THIS SOLVES
+# ---------------------------------------------------------------
+# Before multi-agent protocols existed, every AI integration was
+# custom code. If you wanted an AI to check inventory AND process
+# a refund AND verify a customer, you had to write the glue code
+# yourself and maintain it forever.
+#
+# MCP (Model Context Protocol) and A2A (Agent-to-Agent) change
+# that. MCP gives the AI a standard way to call tools (like
+# inventory APIs). A2A gives AI agents a standard way to talk
+# to each other. This file defines an entire agent network using
+# those two protocols — no custom glue code needed.
+#
+# WHAT THIS FILE DOES
+# ---------------------------------------------------------------
+# This YAML file is the full definition of a multi-agent network
+# that handles customer refunds end to end. A customer types:
+#   "I am customer CUST002. I want a refund for order ORD003."
+# ...and the system verifies them, creates a return, generates
+# a shipping label, processes the refund, and logs it — all
+# automatically, in under 25 seconds.
+#
+# HOW IT WORKS (the 5-step flow)
+# ---------------------------------------------------------------
+# Step 1: Verify the customer identity (A2A call to Node.js agent)
+# Step 2: Create a return request in the warehouse system (MCP)
+# Step 3: Generate a prepaid shipping label (MCP)
+# Step 4: Process the refund payment (MCP) — runs at the SAME
+#         TIME as step 3, because they don't depend on each other
+# Step 5: Write an audit record to the finance ledger (MCP)
+#
+# THE ARCHITECTURE AT A GLANCE
+# ---------------------------------------------------------------
+# [Client] --> [Flex Gateway] --> [Complaint Broker (Gemini LLM)]
+#                  |                     |
+#           PII policy blocks           |--A2A--> Verification Agent (Heroku)
+#           SSNs before LLM            |--MCP--> Inventory Server (Heroku)
+#           ever sees them             |--MCP--> Finance Server (Heroku)
+#
+# KNOWN LIMITATIONS
+# ---------------------------------------------------------------
+# 1. The address fields in generate_return_label are all flat
+#    (customerAddressName, customerAddressStreet, etc.) instead
+#    of a clean nested object. This is a workaround for a bug in
+#    MuleSoft's ToolUtils.java — it can't handle nested objects
+#    in tool schemas yet. When MuleSoft fixes this, the schema
+#    can be simplified.
+#
+# 2. Every tool has a "contextId" field. This is required because
+#    the LLM gateway uses OpenAI Strict Mode, which demands every
+#    property be listed as required when additionalProperties is
+#    false. It doubles as a trace correlation key, which is useful.
+#
+# 3. The PII policy only catches US SSNs in standard XXX-XX-XXXX
+#    format. It misses undelimited 9-digit strings (000111111) and
+#    whitespace-padded variants. See research/analysis/ for details.
+# ---------------------------------------------------------------
+
+schemaVersion: 1.0.0
+label: Customer Complaint Resolution Network
+
+# ---------------------------------------------------------------
+# BROKERS
+# This is the "brain" of the network — an LLM-powered orchestrator
+# that reads the instructions below and decides which agents and
+# tools to call, and in what order. It is exposed as an A2A
+# endpoint so any other system can send it a task.
+# ---------------------------------------------------------------
+brokers:
+  complaint-resolution-broker:
+
+    # The Agent Card is like a business card for this agent.
+    # It gets published at /.well-known/agent.json so other systems
+    # can discover what this agent does without reading source code.
+    card:
+      protocolVersion: 0.3.0
+      name: Complaint Resolution Broker
+      description: >
+        Orchestrates end-to-end customer complaint resolution.
+        Verifies identity via A2A, creates return requests and shipping
+        labels via MCP, processes refunds and ledger entries via MCP.
+      url: ${ingressgw.url}/complaint-resolution-broker
+      capabilities:
+        pushNotifications: false
+      version: 1.1.4
+      provider:
+        organization: MuleSoft
+        url: https://www.mulesoft.com
+      securitySchemes: {}
+      defaultInputModes:
+        - application/json
+        - text/plain
+      defaultOutputModes:
+        - application/json
+        - text/plain
+      skills:
+        - id: resolution
+          name: Resolve Complaint
+          description: >
+            Handles end-to-end returns and refunds.
+            Accepts a natural-language complaint, verifies the customer,
+            creates a return, generates a shipping label, processes the
+            refund, and creates a ledger entry.
+          tags:
+            - complaint-resolution
+
+    spec:
+      # We're using Google Gemini 2.5 Flash Lite as the LLM.
+      # temperature: 1.0 was set by the lab — in production you'd
+      # lower this to 0.2 to make the orchestrator more predictable.
+      # topP and maxOutputTokens are standard Gemini settings.
+      llm:
+        ref:
+          name: google-gemini
+        configuration:
+          model: ${googleGemini.modelName}
+          gemini:
+            temperature: 1.0
+            topP: 0.85
+            responseLogprobs: false
+            maxOutputTokens: 2048
+
+      # These are the plain-English instructions the LLM reads to
+      # decide what to do. The key design choice here is that steps 3
+      # and 4 are explicitly told they can run at the same time.
+      # The LLM understands this and runs them in parallel, which
+      # cuts about 7 seconds off the total response time.
+      # This is the whole point of "LLM-orchestrated parallelism" —
+      # you get concurrency by just telling the model it's allowed.
+      instructions:
+        - |
+          You are the Complaint Resolution Orchestrator.
+          Follow this strict workflow:
+          1. Call `verification-agent` to verify the customer and order.
+             The verification response includes the customer address and
+             an `expedited` flag based on their loyalty tier.
+          2. If verified, use `inventory-mcp-server` to `create_return_request`.
+          3. Use `inventory-mcp-server` to `generate_return_label` using the
+             Return ID from step 2 and the customer address from step 1.
+             Pass address fields individually (name, street, city, state, zip).
+          4. Use `finance-mcp-server` to `process_refund` using the expedited
+             flag from step 1. This step can run in parallel with step 3 —
+             it does not need to wait for the return label.
+          5. Use `finance-mcp-server` to `create_ledger_entry` using the
+             Transaction ID returned by step 4.
+
+          Final Response: Provide a concise summary containing:
+          - Refund Status and Refund ID
+          - Shipping Label URL
+
+      # The sub-agent this broker can delegate to via A2A protocol.
+      # The broker sends it a task and waits for the result — the
+      # A2A protocol handles the lifecycle (submitted/working/completed).
+      links:
+        - agent:
+            ref:
+              name: verification-agent
+
+      # The MCP tool servers this broker can call.
+      # Each server exposes a set of typed functions (tools) that
+      # the LLM can invoke just like calling a function in code.
+      tools:
+        - mcp:
+            ref:
+              name: inventory-mcp-server
+        - mcp:
+            ref:
+              name: finance-mcp-server
+
+      # This is the governance layer. Every message coming in gets
+      # scanned for US Social Security Numbers before the LLM sees it.
+      # If an SSN is found, the gateway returns HTTP 401 immediately —
+      # the LLM is never called, so there's zero chance of the PII
+      # being stored in an LLM's context or logs.
+      # The namespace is MuleSoft's org ID for the policy asset in Exchange.
+      policies:
+        - ref:
+            name: a-two-a-pii-detector
+            namespace: 68ef9520-24e9-4cf2-b2f5-620025690913
+          configuration:
+            entities:
+              - US SSN
+            action: Reject   # returns HTTP 401; LLM never invoked
+
+
+# ---------------------------------------------------------------
+# AGENTS
+# These are external A2A workers — services that run outside of
+# MuleSoft but speak the A2A protocol. The broker delegates tasks
+# to them and waits for a structured response.
+# ---------------------------------------------------------------
+agents:
+  verification-agent:
+    label: Customer Verification Agent
+    description: |
+      Verifies customer identity, checks purchase history, and determines
+      loyalty tiers (Gold/Platinum) for refund eligibility.
+      Returns customer address and expedited-shipping flag.
+    tags:
+      - crm
+    metadata:
+      protocol: a2a
+      platform: CustomNodeJS   # Node.js server hosted on Heroku
+
+
+# ---------------------------------------------------------------
+# MCP SERVERS
+# These are the external tool servers the LLM can call via MCP.
+# Each server defines a set of "tools" — typed functions with
+# input schemas. The LLM figures out which tool to call and what
+# arguments to pass based on the instructions block above.
+#
+# Why define schemas here instead of just calling the API?
+# Because the LLM needs to know the shape of the data before it
+# can form a valid call. The schema is the contract between the
+# LLM and the backend API.
+# ---------------------------------------------------------------
+mcpServers:
+
+  inventory-mcp-server:
+    label: Inventory MCP Server
+    description: Managing returns, inventory checks, and shipping labels.
+    tags:
+      - logistics
+    metadata:
+      transport:
+        kind: streamableHttp   # MCP's HTTP transport — not the older SSE style
+        path: /
+
+      tools:
+
+        # Creates a return record in the warehouse system.
+        # Note: all fields are flat (no nested objects) because of the
+        # MuleSoft ToolUtils.java bug with nested schemas — see file header.
+        - name: create_return_request
+          description: >
+            Creates a return request in the WMS.
+            Schema flattened to avoid nested objects
+            (workaround for MuleSoft ToolUtils.java limitation).
+          inputSchema:
+            type: object
+            additionalProperties: false
+            properties:
+              orderId:
+                type: string
+                description: The original order ID
+              customerId:
+                type: string
+                description: The customer ID
+              productId:
+                type: string
+                description: The product ID being returned
+              reason:
+                type: string
+                description: Reason for the return
+              quantity:
+                type: integer
+                description: Quantity of items to return
+                default: 1
+              contextId:
+                type: string
+                description: >
+                  Tracks which workflow this call belongs to.
+                  Used for distributed tracing across all spans.
+                  Required because OpenAI Strict Mode needs all
+                  properties listed when additionalProperties is false.
+            required:
+              - orderId
+              - customerId
+              - productId
+              - reason
+              - quantity
+              - contextId
+
+        # Generates a prepaid shipping label for the customer to
+        # send the item back. Address is passed as flat fields
+        # (not a nested object) due to the ToolUtils.java limitation.
+        - name: generate_return_label
+          description: >
+            Generates a return shipping label using the customer address
+            from the verification agent response and the return ID from
+            create_return_request. Address fields are flattened to avoid
+            nested objects (workaround for MuleSoft ToolUtils.java).
+          inputSchema:
+            type: object
+            additionalProperties: false
+            properties:
+              returnId:
+                type: string
+                description: The return request ID from create_return_request
+              customerAddressName:
+                type: string
+                description: Customer full name for the shipping label
+              customerAddressStreet:
+                type: string
+                description: Street address line
+              customerAddressCity:
+                type: string
+                description: City
+              customerAddressState:
+                type: string
+                description: State (2-letter code)
+              customerAddressZip:
+                type: string
+                description: ZIP / postal code
+              contextId:
+                type: string
+                description: Workflow trace correlation ID (see create_return_request note)
+            required:
+              - returnId
+              - customerAddressName
+              - customerAddressStreet
+              - customerAddressCity
+              - customerAddressState
+              - customerAddressZip
+              - contextId
+
+        # Just checks if a product is in stock. Not used in the
+        # main 5-step flow but available if the broker needs it.
+        - name: check_inventory_status
+          description: Checks current product stock levels in the warehouse.
+          inputSchema:
+            type: object
+            additionalProperties: false
+            properties:
+              productId:
+                type: string
+                description: The product ID to check
+              contextId:
+                type: string
+                description: Workflow trace correlation ID
+            required:
+              - productId
+              - contextId
+
+  finance-mcp-server:
+    label: Finance MCP Server
+    description: Managing refunds, transactions, and ledger auditing.
+    tags:
+      - finance
+    metadata:
+      transport:
+        kind: streamableHttp
+        path: /
+
+      tools:
+
+        # Processes the actual money refund. The `expedited` flag
+        # comes from the verification agent — Gold/Platinum customers
+        # get their money back faster. This is a good example of how
+        # business logic flows through the agent chain: the verification
+        # agent doesn't just say "valid/invalid", it passes context
+        # that downstream tools actually use.
+        - name: process_refund
+          description: >
+            Processes a refund transaction. Requires the expedited flag
+            from the verification agent response.
+          inputSchema:
+            type: object
+            additionalProperties: false
+            properties:
+              customerId:
+                type: string
+                description: The customer ID receiving the refund
+              orderId:
+                type: string
+                description: The original order ID
+              productId:
+                type: string
+                description: The product ID being refunded
+              amount:
+                type: number
+                description: The refund amount in USD
+              reason:
+                type: string
+                description: Reason for the refund
+              expedited:
+                type: boolean
+                description: >
+                  Whether to expedite the refund. Set by the verification
+                  agent based on customer loyalty tier (Gold/Platinum = true).
+              returnId:
+                type: string
+                description: Return ID from create_return_request
+              contextId:
+                type: string
+                description: Workflow trace correlation ID
+            required:
+              - customerId
+              - orderId
+              - productId
+              - amount
+              - reason
+              - expedited
+              - returnId
+              - contextId
+
+        # The last step — writes an immutable audit record so the
+        # finance team can see every refund that ever happened.
+        # Must be called after process_refund because it needs the
+        # transactionId that process_refund returns.
+        - name: create_ledger_entry
+          description: >
+            Creates a financial audit log entry for the refund transaction.
+            Call this after process_refund using the returned Transaction ID.
+          inputSchema:
+            type: object
+            additionalProperties: false
+            properties:
+              transactionId:
+                type: string
+                description: The transaction ID returned by process_refund
+              customerId:
+                type: string
+                description: The customer ID for this transaction
+              amount:
+                type: number
+                description: The transaction amount in USD
+              type:
+                type: string
+                description: "Type of transaction (e.g. refund, charge, adjustment)"
+              description:
+                type: string
+                description: Human-readable description of the transaction
+              reference:
+                type: string
+                description: Reference ID (order ID or return ID)
+              contextId:
+                type: string
+                description: Workflow trace correlation ID
+            required:
+              - transactionId
+              - customerId
+              - amount
+              - type
+              - description
+              - reference
+              - contextId
+
+
+# ---------------------------------------------------------------
+# LLM PROVIDERS
+# Defines which LLM this network uses. Having this as a separate
+# section means you can swap the LLM (e.g. Gemini to Claude) just
+# by changing the connection below — no changes to tool schemas
+# or instructions needed.
+# ---------------------------------------------------------------
+llmProviders:
+  google-gemini:
+    label: Google Gemini
+    description: Google Gemini LLM provider (gemini-2.5-flash-lite)
+    metadata:
+      platform: Gemini
+
+
+# ---------------------------------------------------------------
+# CONNECTIONS
+# This is where the actual URLs live — separate from the tool
+# definitions above. The idea is that tool schemas stay the same
+# across environments (dev/staging/prod), but the URLs change.
+# So you can test locally against a mock backend and deploy to
+# production by just swapping these URLs.
+#
+# All values come from environment variables injected at deploy
+# time via Anypoint Runtime Manager — never hardcoded here.
+# ---------------------------------------------------------------
+connections:
+
+  verification-agent-connection:
+    kind: agent
+    ref:
+      name: verification-agent
+    spec:
+      url: ${heroku-backend.url}/a2a/
+
+  inventory-mcp-server-connection:
+    kind: mcp
+    ref:
+      name: inventory-mcp-server
+    spec:
+      url: ${heroku-backend.url}/inventory
+
+  finance-mcp-server-connection:
+    kind: mcp
+    ref:
+      name: finance-mcp-server
+    spec:
+      url: ${heroku-backend.url}/finance
+
+  google-gemini-connection:
+    kind: llm
+    ref:
+      name: google-gemini
+    spec:
+      url: ${googleGemini.url}
+      configuration:
+        apiKey: ${googleGemini.apiKey}   # secret — never commit a real value
+        timeout: 600000                  # 10 minutes; LLM orchestration is slow

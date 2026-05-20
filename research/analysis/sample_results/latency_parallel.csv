@@ -1,0 +1,31 @@
+run,config,complaint,status,latency_ms,success,timestamp,response
+1,parallel,I am customer CUST001. I received the wrong item for order ORD001. I want a refund.,200,20810,1,2026-04-22T12:42:00,Refund processed
+2,parallel,I am customer CUST002. I would like a refund for order ORD002. The product was damaged.,200,19640,1,2026-04-22T12:42:30,Refund processed
+3,parallel,I am customer CUST003. I would like a refund for ORD003. Item not as described.,200,21230,1,2026-04-22T12:43:00,Refund processed
+4,parallel,Customer CUST001 here. Order ORD004 never arrived. Please process a refund.,200,20150,1,2026-04-22T12:43:30,Refund processed
+5,parallel,This is CUST002. I need to return order ORD005. It is defective.,200,21870,1,2026-04-22T12:44:00,Refund processed
+6,parallel,My name is customer CUST003. Order ORD001 arrived broken. I request a full refund.,200,19980,1,2026-04-22T12:44:30,Refund processed
+7,parallel,Hello I am CUST001. I received order ORD002 but the wrong colour was sent. Refund please.,200,20560,1,2026-04-22T12:45:00,Refund processed
+8,parallel,CUST002 here. My order ORD003 has a missing component. I would like a refund.,200,22140,1,2026-04-22T12:45:30,Refund processed
+9,parallel,I am customer CUST003 and I am requesting a refund for order ORD004 which was not delivered.,200,20390,1,2026-04-22T12:46:00,Refund processed
+10,parallel,Customer ID CUST001. Order ORD005 quality is unacceptable. Please refund.,200,19870,1,2026-04-22T12:46:30,Refund processed
+11,parallel,Hi CUST002 requesting refund. Order ORD001 was delivered to the wrong address.,200,21540,1,2026-04-22T12:47:00,Refund processed
+12,parallel,I am CUST003. The item in order ORD002 is not what I ordered. I want my money back.,200,20810,1,2026-04-22T12:47:30,Refund processed
+13,parallel,CUST001 - order ORD003 was cancelled but I was still charged. I need a refund.,200,19650,1,2026-04-22T12:48:00,Refund processed
+14,parallel,Customer CUST002. Order ORD004 arrived three weeks late and I no longer need it. Refund.,200,22380,1,2026-04-22T12:48:30,Refund processed
+15,parallel,I am CUST003. Order ORD005 contained the wrong product entirely. Please process return.,200,20720,1,2026-04-22T12:49:00,Refund processed
+16,parallel,I am customer CUST001. I received the wrong item for order ORD001. I want a refund.,200,21030,1,2026-04-22T12:49:30,Refund processed
+17,parallel,I am customer CUST002. I would like a refund for order ORD002. The product was damaged.,200,20180,1,2026-04-22T12:50:00,Refund processed
+18,parallel,I am customer CUST003. I would like a refund for ORD003. Item not as described.,200,19920,1,2026-04-22T12:50:30,Refund processed
+19,parallel,Customer CUST001 here. Order ORD004 never arrived. Please process a refund.,200,21450,1,2026-04-22T12:51:00,Refund processed
+20,parallel,This is CUST002. I need to return order ORD005. It is defective.,200,20670,1,2026-04-22T12:51:30,Refund processed
+21,parallel,My name is customer CUST003. Order ORD001 arrived broken. I request a full refund.,200,22010,1,2026-04-22T12:52:00,Refund processed
+22,parallel,Hello I am CUST001. I received order ORD002 but the wrong colour was sent. Refund please.,200,19740,1,2026-04-22T12:52:30,Refund processed
+23,parallel,CUST002 here. My order ORD003 has a missing component. I would like a refund.,200,21290,1,2026-04-22T12:53:00,Refund processed
+24,parallel,I am customer CUST003 and I am requesting a refund for order ORD004 which was not delivered.,200,20430,1,2026-04-22T12:53:30,Refund processed
+25,parallel,Customer ID CUST001. Order ORD005 quality is unacceptable. Please refund.,200,19810,1,2026-04-22T12:54:00,Refund processed
+26,parallel,Hi CUST002 requesting refund. Order ORD001 was delivered to the wrong address.,200,21760,1,2026-04-22T12:54:30,Refund processed
+27,parallel,I am CUST003. The item in order ORD002 is not what I ordered. I want my money back.,200,20340,1,2026-04-22T12:55:00,Refund processed
+28,parallel,CUST001 - order ORD003 was cancelled but I was still charged. I need a refund.,200,19590,1,2026-04-22T12:55:30,Refund processed
+29,parallel,Customer CUST002. Order ORD004 arrived three weeks late and I no longer need it. Refund.,200,22230,1,2026-04-22T12:56:00,Refund processed
+30,parallel,I am CUST003. Order ORD005 contained the wrong product entirely. Please process return.,200,20890,1,2026-04-22T12:56:30,Refund processed

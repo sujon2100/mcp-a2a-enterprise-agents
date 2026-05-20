@@ -1,0 +1,4 @@
+Pair,U,p,Cohen_d,Effect,Sig
+sequential vs parallel,900.0,3.0179667984904466e-11,7.835,large,significant
+parallel vs max-parallel,900.0,3.0179667984904466e-11,5.967,large,significant
+sequential vs max-parallel,900.0,3.019859359162157e-11,13.949,large,significant

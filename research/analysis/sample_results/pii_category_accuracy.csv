@@ -1,0 +1,13 @@
+Category,n,Correct,Accuracy_%,Expected_BLOCK,Expected_PASS
+format_variant,3,1,33.3,3,0
+edge_case,4,3,75.0,3,1
+adversarial,3,3,100.0,3,0
+long_message,1,1,100.0,0,1
+long_message_with_pii,1,1,100.0,1,0
+multilingual,3,3,100.0,2,1
+multiple_pii,2,2,100.0,2,0
+near_miss,5,5,100.0,0,5
+prompt_injection_no_pii,3,3,100.0,0,3
+true_negative,10,10,100.0,0,10
+true_negative_numbers,5,5,100.0,0,5
+true_positive,10,10,100.0,10,0

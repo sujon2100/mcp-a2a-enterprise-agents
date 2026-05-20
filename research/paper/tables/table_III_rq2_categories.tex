@@ -1,0 +1,23 @@
+\begin{table}[t]
+        \centering
+        \caption{RQ2: PII Detection Accuracy by Test Category (a-two-a-pii-detector v1.0.1, Flex Gateway, $n=50$ test cases)}
+        \label{tab:rq2_categories}
+        \begin{tabular}{p{5.5cm}ccc}
+        \hline
+        \textbf{Category} & \textbf{$n$} & \textbf{Correct} & \textbf{Accuracy} \\
+\hline
+        Adversarial (SSN + jailbreak) & 3 & 3 & 100\% \\
+Edge cases (bare / whitespace / minimal) & 4 & 3 & 75\% \\
+Format variants (no-dash / space / equals) & 3 & 1 & 33\% \\
+Long message (clean) & 1 & 1 & 100\% \\
+Long message with buried SSN & 1 & 1 & 100\% \\
+Multilingual (French / Spanish) & 3 & 3 & 100\% \\
+Multiple PII types (SSN + email/phone) & 2 & 2 & 100\% \\
+Near-miss (phone / date / 8-digit) & 5 & 5 & 100\% \\
+Prompt injection (no SSN) & 3 & 3 & 100\% \\
+True negative (clean complaints) & 10 & 10 & 100\% \\
+True negative (order/tracking numbers) & 5 & 5 & 100\% \\
+True positive (standard SSN format) & 10 & 10 & 100\% \\
+        \hline
+        \end{tabular}
+        \end{table}

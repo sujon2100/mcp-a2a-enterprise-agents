@@ -1,0 +1,321 @@
+# =============================================================
+# RESEARCH CONFIG — Maximum Parallelism Variant
+# =============================================================
+# RQ1 experimental variant: broker instructed to run steps 2
+# and 4 concurrently after verification (step 1).
+# Steps 3 and 5 chain immediately after their respective
+# dependencies complete.
+#
+# ONLY the instructions: block is changed from the live config.
+# =============================================================
+
+schemaVersion: 1.0.0
+label: Customer Complaint Resolution Network
+brokers:
+  complaint-resolution-broker:
+    card:
+      protocolVersion: 0.3.0
+      name: Complaint Resolution Broker
+      description: Orchestrates end-to-end customer complaint resolution.
+      url: ${ingressgw.url}/complaint-resolution-broker
+      capabilities:
+        pushNotifications: false
+      version: 1.1.1
+      provider:
+        organization: MuleSoft
+        url: https://www.mulesoft.com
+      securitySchemes: {}
+      defaultInputModes:
+        - application/json
+        - text/plain
+      defaultOutputModes:
+        - application/json
+        - text/plain
+      skills:
+        -
+          id: resolution
+          name: Resolve Complaint
+          description: Handles returns and refunds.
+          tags:
+            - complaint-resolution
+    spec:
+      llm:
+        ref:
+          name: google-gemini
+        configuration:
+          model: ${googleGemini.modelName}
+          gemini:
+            temperature: 1.0
+            topP: 0.85
+            responseLogprobs: false
+            maxOutputTokens: 2048
+      # RESEARCH VARIANT: MAXIMUM PARALLELISM
+      # Steps 2 (create_return_request) and 4 (process_refund)
+      # are both independent after verification and run concurrently.
+      # Steps 3 and 5 chain immediately after their dependencies complete.
+      # This is the experimental MAXIMUM PARALLELISM variant for RQ1.
+      instructions:
+        - |
+          You are the Complaint Resolution Orchestrator.
+          Follow this workflow with MAXIMUM PARALLELISM.
+          Run independent steps concurrently wherever possible.
+
+          STEP 1: Call `verification-agent` to verify the customer and order.
+                  Wait for the full verification response (includes address and expedited flag).
+
+          STEP 2 + STEP 4 (run concurrently after STEP 1 completes):
+            STEP 2: Use `inventory-mcp-server` to `create_return_request`.
+            STEP 4: Use `finance-mcp-server` to `process_refund` using the expedited flag.
+                    Do NOT wait for STEP 2 or STEP 3 before starting STEP 4.
+
+          STEP 3 (as soon as STEP 2 completes):
+            Use `inventory-mcp-server` to `generate_return_label` using the Return ID from STEP 2.
+
+          STEP 5 (as soon as STEP 4 completes):
+            Use `finance-mcp-server` to `create_ledger_entry` using the Transaction ID from STEP 4.
+
+          Final Response: Provide a summary with the Refund Status and Shipping Label URL.
+      # ────────────────────────────────────────────────────────
+      links:
+        - agent:
+            ref:
+              name: verification-agent
+      tools:
+        - mcp:
+            ref:
+              name: inventory-mcp-server
+        - mcp:
+            ref:
+              name: finance-mcp-server
+      policies:
+        - ref:
+            name: a-two-a-pii-detector
+            namespace: 68ef9520-24e9-4cf2-b2f5-620025690913
+          configuration:
+            entities:
+              - US SSN
+            action: Reject
+
+
+agents:
+  verification-agent:
+    label: Customer Verification Agent
+    description: |
+      Verifies customer identity, checks purchase history, and determines loyalty tiers (Gold/Platinum) for refund eligibility.
+    tags:
+      - crm
+    metadata:
+      protocol: a2a
+      platform: CustomNodeJS
+mcpServers:
+  inventory-mcp-server:
+    label: Inventory MCP Server
+    description: Managing returns, inventory checks, and shipping labels.
+    tags:
+      - logistics
+    metadata:
+      transport:
+        kind: streamableHttp
+        path: /
+      tools:
+        - name: generate_return_label
+          description: Generate a return shipping label using the customer address from the verification agent response and the return ID from create_return_request. Address fields are flattened to avoid nested objects (temporary workaround until MuleSoft fixes ToolUtils.java).
+          inputSchema:
+            type: object
+            additionalProperties: false
+            properties:
+              returnId:
+                type: string
+                description: The return request ID
+              customerAddressName:
+                type: string
+                description: Customer name for shipping label
+              customerAddressStreet:
+                type: string
+                description: Street address
+              customerAddressCity:
+                type: string
+                description: City
+              customerAddressState:
+                type: string
+                description: State
+              customerAddressZip:
+                type: string
+                description: ZIP code
+              contextId:
+                type: string
+                description: Workflow context ID for progress tracking and correlation (required by OpenAI Strict Mode)
+            required:
+              - returnId
+              - customerAddressName
+              - customerAddressStreet
+              - customerAddressCity
+              - customerAddressState
+              - customerAddressZip
+              - contextId
+        - name: create_return_request
+          description: Creates a return request in the WMS. Schema flattened to avoid nested objects (temporary workaround).
+          inputSchema:
+            type: object
+            additionalProperties: false
+            properties:
+              orderId:
+                type: string
+                description: The original order ID
+              customerId:
+                type: string
+                description: The customer ID
+              productId:
+                type: string
+                description: The product ID being returned
+              reason:
+                type: string
+                description: Reason for the return
+              quantity:
+                type: integer
+                description: Quantity of items to return
+                default: 1
+              contextId:
+                type: string
+                description: Workflow context ID for progress tracking and correlation (required by OpenAI Strict Mode)
+            required:
+              - orderId
+              - customerId
+              - productId
+              - reason
+              - quantity
+              - contextId
+        - name: check_inventory_status
+          description: Checks product stock levels.
+          inputSchema:
+            type: object
+            additionalProperties: false
+            properties:
+              productId:
+                type: string
+                description: The product ID to check
+              contextId:
+                type: string
+                description: Workflow context ID for progress tracking and correlation (required by OpenAI Strict Mode)
+            required:
+              - productId
+              - contextId
+
+  finance-mcp-server:
+    label: Finance MCP Server
+    description: Managing refunds, transactions, and ledger auditing.
+    tags:
+      - finance
+    metadata:
+      transport:
+        kind: streamableHttp
+        path: /
+      tools:
+        - name: "process_refund"
+          description: "Processes a refund. Requires expedited flag. OpenAI Strict Mode: all properties must be required."
+          inputSchema:
+            type: object
+            additionalProperties: false
+            properties:
+              customerId:
+                type: string
+                description: The customer ID receiving the refund
+              orderId:
+                type: string
+                description: The original order ID
+              productId:
+                type: string
+                description: The product ID being refunded
+              amount:
+                type: number
+                description: The refund amount
+              reason:
+                type: string
+                description: Reason for the refund
+              expedited:
+                type: boolean
+                description: Whether to expedite the refund process
+              returnId:
+                type: string
+                description: Return ID if associated with a return request
+              contextId:
+                type: string
+                description: Workflow context ID for progress tracking and correlation (required by OpenAI Strict Mode)
+            required:
+              - customerId
+              - orderId
+              - productId
+              - amount
+              - reason
+              - expedited
+              - returnId
+              - contextId
+        - name: "create_ledger_entry"
+          description: "Creates a financial audit log entry. OpenAI Strict Mode: all properties must be required."
+          inputSchema:
+            type: object
+            additionalProperties: false
+            properties:
+              transactionId:
+                type: string
+                description: The transaction ID from the refund
+              customerId:
+                type: string
+                description: The customer ID for this transaction
+              amount:
+                type: number
+                description: The transaction amount
+              type:
+                type: string
+                description: Type of transaction (refund, charge, adjustment, etc.)
+              description:
+                type: string
+                description: A description of the transaction
+              reference:
+                type: string
+                description: Reference ID (e.g., order ID)
+              contextId:
+                type: string
+                description: Workflow context ID for progress tracking and correlation (required by OpenAI Strict Mode)
+            required:
+              - transactionId
+              - customerId
+              - amount
+              - type
+              - description
+              - reference
+              - contextId
+llmProviders:
+  google-gemini:
+    label: Google Gemini
+    description: Google Gemini LLM Provider
+    metadata:
+      platform: Gemini
+connections:
+  verification-agent-connection:
+    kind: agent
+    ref:
+      name: verification-agent
+    spec:
+      url: ${heroku-backend.url}/a2a/
+  inventory-mcp-server-connection:
+    kind: mcp
+    ref:
+      name: inventory-mcp-server
+    spec:
+      url: ${heroku-backend.url}/inventory
+  finance-mcp-server-connection:
+    kind: mcp
+    ref:
+      name: finance-mcp-server
+    spec:
+      url: ${heroku-backend.url}/finance
+  google-gemini-connection:
+    kind: llm
+    ref:
+      name: google-gemini
+    spec:
+      url: ${googleGemini.url}
+      configuration:
+        apiKey: ${googleGemini.apiKey}
+        timeout: 600000

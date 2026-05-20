@@ -1,0 +1,4 @@
+Configuration,n,Mean (ms),Median (ms),Std Dev (ms),Min (ms),Max (ms),p95 (ms)
+sequential,30,28274.3,28095.0,1050.1,26540,30560,29989.5
+parallel,30,20769.3,20695.0,856.0,19590,22380,22189.5
+max-parallel,30,16371.3,16305.0,594.8,15470,17420,17318.5

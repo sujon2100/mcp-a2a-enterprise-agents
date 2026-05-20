@@ -1,0 +1,62 @@
+{
+  "main": "agent-network.yaml",
+  "name": "customer-complaint-resolution",
+  "classifier": "agent-network",
+  "organizationId": "${ANYPOINT_ORG_ID}",
+  "descriptorVersion": "1.0.0",
+  "tags": [
+    "mcp",
+    "a2a",
+    "agent-fabric",
+    "complaint-resolution",
+    "refund",
+    "tdx2026"
+  ],
+  "metadata": {
+    "variables": {
+      "ingressgw": {
+        "url": {
+          "description": "Flex Gateway ingress public endpoint (CloudHub 2.0). Set via Anypoint Runtime Manager after deployment.",
+          "default": "",
+          "secret": false
+        }
+      },
+      "heroku-backend": {
+        "url": {
+          "description": "Heroku backend base URL hosting the verification agent (A2A) and MCP servers.",
+          "default": "",
+          "secret": false
+        }
+      },
+      "googleGemini": {
+        "url": {
+          "description": "Google Gemini API base URL",
+          "default": "https://generativelanguage.googleapis.com/",
+          "secret": false
+        },
+        "modelName": {
+          "description": "Google Gemini model identifier",
+          "default": "gemini-2.5-flash-lite",
+          "secret": false
+        },
+        "apiKey": {
+          "description": "Google Gemini API key — inject as a secret via Anypoint Runtime Manager. NEVER commit a real value here.",
+          "default": "",
+          "secret": true
+        }
+      }
+    }
+  },
+  "dependencies": [
+    {
+      "classifier": "schema",
+      "packaging": "zip",
+      "groupId": "68ef9520-24e9-4cf2-b2f5-620025690913",
+      "assetId": "a-two-a-pii-detector",
+      "version": "1.0.1"
+    }
+  ],
+  "groupId": "${ANYPOINT_ORG_ID}",
+  "assetId": "customer-complaint-resolution",
+  "version": "1.1.4"
+}

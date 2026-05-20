@@ -1,0 +1,14 @@
+\begin{table}[t]
+        \centering
+        \caption{RQ2: Gateway Enforcement Latency by Outcome — BLOCK requests are short-circuited at Flex Gateway before reaching the LLM}
+        \label{tab:rq2_latency}
+        \begin{tabular}{lccp{4.5cm}}
+        \hline
+        \textbf{Outcome} & \textbf{Mean (ms)} & \textbf{p95 (ms)} & \textbf{Notes} \\
+\hline
+        BLOCK (policy rejected) & 64 & 74 & Flex Gateway short-circuit; no LLM invocation \\
+PASS (policy allowed) & 382 & 421 & Full 5-step orchestration; LLM + tool calls \\
+Overhead (BLOCK$-$PASS) & -317 & — & Negative = gateway faster than full pipeline \\
+        \hline
+        \end{tabular}
+        \end{table}

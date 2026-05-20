@@ -1,0 +1,49 @@
+# =============================================================
+# LLM Proxy Policies — Anypoint API Manager
+# =============================================================
+#
+# These policies are applied to the Google Gemini LLM Proxy
+# in Anypoint API Manager → LLM Proxies → Google Gemini → Policies.
+#
+# Observed in TDX 2026 Session 1557 Exercise screenshots:
+#   - 2 Inbound policies: Tracing, Agent Connection Telemetry
+#   - 1 Outbound policy (visible in API Manager)
+#
+# NOTE: These are applied through the Anypoint Platform UI,
+# not through agent-network.yaml. They govern the gateway's
+# interaction with the upstream Gemini API endpoint.
+#
+# Warning banner observed in lab:
+#   "This instance comes from an agent network project.
+#    Policy changes made here will be reverted next time
+#    it gets redeployed."
+# → Always set LLM proxy policies via the agent network project,
+#   not directly in API Manager, to avoid drift on redeploy.
+# =============================================================
+
+llmProxyPolicies:
+  target: google-gemini       # LLM proxy name in Anypoint API Manager
+  environment: Sandbox
+
+  inbound:
+    # Tracing (TROUBLESHOOTING category)
+    # Enables distributed tracing for all requests to the Gemini LLM.
+    # Spans appear in Anypoint Monitoring as [LLM] google-gemini.
+    # Required for end-to-end trace visibility in Exercise 5.
+    - name: Tracing
+      category: TROUBLESHOOTING
+      autoApplied: false
+
+    # Agent Connection Telemetry (CUSTOM category)
+    # Collects token usage, latency, and agent-specific metadata
+    # for each LLM call. Feeds the Anypoint Monitoring dashboards.
+    - name: Agent Connection Telemetry
+      category: CUSTOM
+      autoApplied: false
+
+  outbound:
+    # Outbound policies observed (1 policy) — details from lab screenshots
+    - name: (see Anypoint API Manager for current outbound policy)
+      note: >
+        Outbound policies control how the gateway transforms or routes
+        responses from the Gemini API back to the calling agent.
